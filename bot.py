@@ -35,9 +35,10 @@ logger = logging.getLogger(__name__)
 # ==================== FLASK ====================
 flask_app = Flask(__name__)
 
-@flask_app.route('/')
-def home():
-    return 'JM Мебельный завод — Бот работает! ✅'
+@flask_app.route('/miniapp')
+def miniapp():
+    with open('miniapp.html', encoding='utf-8') as f:
+        return f.read()
 
 def run_flask():
     port = int(os.environ.get('PORT', 10000))
