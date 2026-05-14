@@ -55,14 +55,33 @@ def get_user_role(telegram_id: int):
     try:
         sheet = get_sheet(SHEET_USERS)
         records = sheet.get_all_records()
+        logger.info(f"Ищем ID: {telegram_id}, всего записей: {len(records)}")
         for row in records:
-            if str(row.get("Telegram ID", "")) == str(telegram_id):
-                if str(row.get("Активен", "")).lower() == "да":
-                    return row.get("Роль", "").lower(), row.get("Имя", "Пользователь")
+            row_id = str(row.get("Telegram ID", "")).strip()
+            logger.info(f"Строка: ID={row_id}, роль={row.get('Роль')}, активен={row.get('Активен')}")
+            if row_id == str(telegram_id):
+                aktivnost = str(row.get("Активен", "")).lower().strip()
+                if aktivnost == "да":
+                    return row.get("Роль", "").lower().strip(), row.get("Имя", "Пользователь")
+                else:
+                    return row.get("Роль", "ожидание").lower().strip(), row.get("Имя", "Пользователь")
         return None, None
     except Exception as e:
         logger.error(f"Ошибка получения роли: {e}")
         return None, None
+
+def register_user(telegram_id: int, name: str):
+    try:
+        sheet = get_sheet(SHEET_USERS)
+        records = sheet.get_all_records()
+        for row in records:
+            if str(row.get("Telegram ID", "")).strip() == str(telegram_id):
+                return False  # уже есть
+        sheet.append_row([telegram_id, name, "ожидание", "нет"])
+        return True
+    except Exception as e:
+        logger.error(f"Ошибка регистрации: {e}")
+        return False
 
 def get_next_number(sheet_name):
     try:
@@ -173,14 +192,38 @@ def back_keyboard():
 # ==================== ХЕНДЛЕРЫ ====================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    user_full_name = update.effective_user.full_name
     role, name = get_user_role(user_id)
+
     if not role:
+        # Новый пользователь — регистрируем
+        registered = register_user(user_id, user_full_name)
+        if registered:
+            await update.message.reply_text(
+                f"👋 Salom, {user_full_name}!\n\n"
+                f"✅ Siz ro'yxatdan o'tdingiz!\n"
+                f"Вы зарегистрированы!\n\n"
+                f"⏳ Direktor sizga rol berishi kerak.\n"
+                f"Директор должен открыть таблицу и дать вам роль.\n\n"
+                f"После получения роли напишите /start снова."
+            )
+        else:
+            await update.message.reply_text(
+                f"⏳ {user_full_name}, ваша заявка уже отправлена.\n"
+                f"Ожидайте пока директор даст вам доступ.\n"
+                f"Потом напишите /start снова."
+            )
+        return ConversationHandler.END
+
+    if role == "ожидание":
         await update.message.reply_text(
-            "⛔️ Siz ro'yxatda yo'qsiz.\n"
-            "Вы не зарегистрированы.\n"
-            "Директорга murojaat qiling."
+            f"⏳ {name}, sizning so'rovingiz ko'rib chiqilmoqda.\n"
+            f"Ваш запрос ещё не обработан.\n"
+            f"Директор должен дать вам роль в таблице.\n"
+            f"Потом напишите /start снова."
         )
         return ConversationHandler.END
+
     context.user_data["role"] = role
     context.user_data["name"] = name
     text = (
@@ -198,8 +241,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     user_id = update.effective_user.id
     role, name = get_user_role(user_id)
-    if not role:
-        await query.edit_message_text("⛔️ Доступ запрещён.")
+    if not role or role == "ожидание":
+        await query.edit_message_text("⛔️ Доступ запрещён. Напишите /start")
         return ConversationHandler.END
     context.user_data["role"] = role
     context.user_data["name"] = name
@@ -381,43 +424,6 @@ async def salary_advance(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Только цифры!")
         return SALARY_ADVANCE
 
-async def confirm_salary(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    role = context.user_data.get("role", ROLE_SUPPLIER)
-    name = context.user_data.get("name", "")
-    if query.data == "cancel":
-        await query.edit_message_text("❌ Отменено.", reply_markup=main_keyboard(role))
-        return ConversationHandler.END
-    try:
-        data = {
-            "worker_name": context.user_data["worker_name"],
-            "position": context.user_data["position"],
-            "base": context.user_data["salary_base"],
-            "advance": context.user_data["salary_advance"],
-        }
-        total = add_salary(data, name)
-        add_operation({
-            "type": "Расход", "category": "👷 Зарплаты",
-            "amount": total, "comment": f"{data['worker_name']} · зарплата"
-        }, name)
-        text = (
-            f"✅ Saqlandi!\n\n"
-            f"👷 {data['worker_name']}\n💼 {data['position']}\n"
-            f"💰 Оклад: {int(data['base']):,} сум\n"
-            f"💵 Аванс: {int(data['advance']):,} сум\n"
-            f"✅ Выдано: {total:,} сум\n"
-            f"📅 {datetime.now().strftime('%d.%m.%Y %H:%M')}"
-        )
-        buttons = InlineKeyboardMarkup([
-            [InlineKeyboardButton("➕ Yana / Ещё", callback_data="type_expense")],
-            [InlineKeyboardButton("🏠 Главная", callback_data="back_main")]
-        ])
-        await query.edit_message_text(text, reply_markup=buttons)
-    except Exception as e:
-        await query.edit_message_text(f"❌ Ошибка: {e}")
-    return ConversationHandler.END
-
 async def show_summary(query):
     try:
         sheet = get_sheet(SHEET_OPERATIONS)
@@ -479,7 +485,7 @@ async def show_users(query):
         records = sheet.get_all_records()
         text = "👥 Пользователи:\n\n"
         for r in records:
-            status = "✅" if str(r.get("Активен", "")).lower() == "да" else "❌"
+            status = "✅" if str(r.get("Активен", "")).lower() == "да" else "⏳"
             text += f"{status} {r.get('Имя')} — {r.get('Роль')}\n"
         await query.edit_message_text(text, reply_markup=back_keyboard())
     except Exception as e:
