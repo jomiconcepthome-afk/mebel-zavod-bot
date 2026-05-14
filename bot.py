@@ -1,9 +1,11 @@
 import logging
 import os
-import json
+import threading
 from datetime import datetime
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes, ConversationHandler
+from flask import Flask
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (Application, CommandHandler, CallbackQueryHandler,
+                          MessageHandler, filters, ContextTypes, ConversationHandler)
 import gspread
 from google.oauth2.service_account import Credentials
 
@@ -12,37 +14,40 @@ BOT_TOKEN = "8629040648:AAHBLeQlhNmMUPlZdzLdKA4PDDl4NnMHGGA"
 SPREADSHEET_ID = "1nw-0J3AFRTRBZBpua859wjCFKjxUcZazHcJYqax0byg"
 CREDENTIALS_FILE = "credentials.json"
 
-# Листы таблицы
 SHEET_OPERATIONS = "Операции"
 SHEET_SALARIES = "Зарплаты"
 SHEET_USERS = "Пользователи"
 SHEET_SETTINGS = "Настройки"
 
-# Роли
 ROLE_DIRECTOR = "директор"
 ROLE_ACCOUNTANT = "бухгалтер"
 ROLE_SUPPLIER = "снабженец"
 
-# Категории расходов
 EXPENSE_CATEGORIES = ["🪵 Материалы", "👷 Зарплаты", "💡 Коммунальные", "⚙️ Производство"]
 INCOME_CATEGORIES = ["🛋 Продажи мебели", "💰 Аванс", "📦 Прочие поступления"]
 
-# Состояния разговора
-(TYPE, CATEGORY, AMOUNT, COMMENT,
- SALARY_NAME, SALARY_POSITION, SALARY_BASE, SALARY_ADVANCE,
- ADD_USER_ID, ADD_USER_NAME, ADD_USER_ROLE) = range(11)
+(CATEGORY, AMOUNT, COMMENT,
+ SALARY_NAME, SALARY_POSITION, SALARY_BASE, SALARY_ADVANCE) = range(7)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# ==================== FLASK ====================
+flask_app = Flask(__name__)
+
+@flask_app.route('/')
+def home():
+    return 'JM Мебельный завод — Бот работает! ✅'
+
+def run_flask():
+    port = int(os.environ.get('PORT', 10000))
+    flask_app.run(host='0.0.0.0', port=port)
+
 # ==================== GOOGLE SHEETS ====================
-def get_sheets_client():
+def get_sheet(sheet_name):
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
     creds = Credentials.from_service_account_file(CREDENTIALS_FILE, scopes=scopes)
-    return gspread.authorize(creds)
-
-def get_sheet(sheet_name):
-    client = get_sheets_client()
+    client = gspread.authorize(creds)
     spreadsheet = client.open_by_key(SPREADSHEET_ID)
     return spreadsheet.worksheet(sheet_name)
 
@@ -137,9 +142,9 @@ def main_keyboard(role):
     if role in [ROLE_ACCOUNTANT, ROLE_DIRECTOR]:
         buttons.append([InlineKeyboardButton("📋 Сводка сегодня", callback_data="summary")])
     if role == ROLE_DIRECTOR:
-        buttons.append([InlineKeyboardButton("📈 Дашборд по категориям", callback_data="dashboard")])
-        buttons.append([InlineKeyboardButton("⚙️ Настройки / Sozlamalar", callback_data="settings")])
-    buttons.append([InlineKeyboardButton("🕐 Мои записи / Yozuvlarim", callback_data="my_records")])
+        buttons.append([InlineKeyboardButton("📈 Дашборд", callback_data="dashboard")])
+        buttons.append([InlineKeyboardButton("⚙️ Настройки", callback_data="settings")])
+    buttons.append([InlineKeyboardButton("🕐 Мои записи", callback_data="my_records")])
     return InlineKeyboardMarkup(buttons)
 
 def category_keyboard(cat_type):
@@ -148,49 +153,43 @@ def category_keyboard(cat_type):
     buttons.append([InlineKeyboardButton("❌ Отмена / Bekor", callback_data="cancel")])
     return InlineKeyboardMarkup(buttons)
 
-def confirm_keyboard():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("✅ Подтвердить / Tasdiqlash", callback_data="confirm")],
-        [InlineKeyboardButton("❌ Отмена / Bekor", callback_data="cancel")]
-    ])
-
 def skip_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("⏭ Пропустить / O'tish", callback_data="skip_comment")],
         [InlineKeyboardButton("❌ Отмена / Bekor", callback_data="cancel")]
     ])
 
-def settings_keyboard():
+def confirm_keyboard():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("👥 Пользователи", callback_data="settings_users")],
-        [InlineKeyboardButton("🔔 Лимиты по категориям", callback_data="settings_limits")],
-        [InlineKeyboardButton("◀️ Назад", callback_data="back_main")]
+        [InlineKeyboardButton("✅ Подтвердить / Tasdiqlash", callback_data="confirm")],
+        [InlineKeyboardButton("❌ Отмена / Bekor", callback_data="cancel")]
+    ])
+
+def back_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("◀️ Назад / Orqaga", callback_data="back_main")]
     ])
 
 # ==================== ХЕНДЛЕРЫ ====================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     role, name = get_user_role(user_id)
-
     if not role:
         await update.message.reply_text(
             "⛔️ Siz ro'yxatda yo'qsiz.\n"
-            "Вы не зарегистрированы в системе.\n"
-            "Директорга murojaat qiling / Обратитесь к директору."
+            "Вы не зарегистрированы.\n"
+            "Директорга murojaat qiling."
         )
         return ConversationHandler.END
-
     context.user_data["role"] = role
     context.user_data["name"] = name
-
-    greeting = (
-        f"Assalomu alaykum, {name}! 👋\n"
-        f"Salom, {name}!\n\n"
+    text = (
+        f"Assalomu alaykum, {name}! 👋\n\n"
         f"🏭 JM Мебельный завод — Учёт\n"
-        f"Роль / Lavozim: {role.upper()}\n\n"
+        f"Роль: {role.upper()}\n\n"
         f"Нима qilmoqchisiz? / Что хотите сделать?"
     )
-    await update.message.reply_text(greeting, reply_markup=main_keyboard(role))
+    await update.message.reply_text(text, reply_markup=main_keyboard(role))
     return ConversationHandler.END
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -199,260 +198,100 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     user_id = update.effective_user.id
     role, name = get_user_role(user_id)
-
     if not role:
         await query.edit_message_text("⛔️ Доступ запрещён.")
         return ConversationHandler.END
-
     context.user_data["role"] = role
     context.user_data["name"] = name
 
-    # Тип операции
-    if data in ["type_expense", "type_income"]:
-        context.user_data["op_type"] = "Расход" if data == "type_expense" else "Доход"
-        cat_type = "expense" if data == "type_expense" else "income"
-        text = "📋 Kategoriyani tanlang / Выберите категорию:"
-        await query.edit_message_text(text, reply_markup=category_keyboard(cat_type))
+    if data == "type_expense":
+        context.user_data["op_type"] = "Расход"
+        await query.edit_message_text(
+            "📋 Kategoriyani tanlang / Выберите категорию:",
+            reply_markup=category_keyboard("expense")
+        )
         return CATEGORY
-
-    # Сводка
+    elif data == "type_income":
+        context.user_data["op_type"] = "Доход"
+        await query.edit_message_text(
+            "📋 Kategoriyani tanlang / Выберите категорию:",
+            reply_markup=category_keyboard("income")
+        )
+        return CATEGORY
     elif data == "summary":
         await show_summary(query)
-        return ConversationHandler.END
-
-    # Дашборд
     elif data == "dashboard":
         await show_dashboard(query)
-        return ConversationHandler.END
-
-    # Настройки
     elif data == "settings":
-        await query.edit_message_text("⚙️ Настройки / Sozlamalar:", reply_markup=settings_keyboard())
-        return ConversationHandler.END
-
-    # Мои записи
+        await show_users(query)
     elif data == "my_records":
         await show_my_records(query, name)
-        return ConversationHandler.END
-
-    # Настройки пользователи
-    elif data == "settings_users":
-        await show_users(query)
-        return ConversationHandler.END
-
-    # Отмена
-    elif data == "cancel":
-        context.user_data.clear()
-        context.user_data["role"] = role
-        context.user_data["name"] = name
+    elif data == "back_main":
         await query.edit_message_text(
-            "❌ Bekor qilindi / Отменено.\n\nНима qilmoqchisiz?",
+            "Нима qilmoqchisiz? / Что хотите сделать?",
             reply_markup=main_keyboard(role)
         )
-        return ConversationHandler.END
-
-    elif data == "back_main":
-        await query.edit_message_text("Нима qilmoqchisiz?", reply_markup=main_keyboard(role))
-        return ConversationHandler.END
-
+    elif data == "cancel":
+        context.user_data.clear()
+        await query.edit_message_text("❌ Bekor qilindi / Отменено.", reply_markup=main_keyboard(role))
     return ConversationHandler.END
 
 async def category_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
-
+    role = context.user_data.get("role", ROLE_SUPPLIER)
     if data == "cancel":
-        role = context.user_data.get("role", ROLE_SUPPLIER)
         await query.edit_message_text("❌ Отменено.", reply_markup=main_keyboard(role))
         return ConversationHandler.END
-
     category = data.replace("cat_", "")
     context.user_data["category"] = category
-
     if category == "👷 Зарплаты":
-        await query.edit_message_text(
-            "👷 Работник ismi / Имя работника:\n(Masalan: Alisher Karimov)"
-        )
+        await query.edit_message_text("👷 Работник ismi / Имя работника:")
         return SALARY_NAME
-
     await query.edit_message_text(
-        f"✅ Kategoriya: {category}\n\n"
-        f"💰 Summani kiriting / Введите сумму (только цифры):"
+        f"✅ {category}\n\n💰 Summani kiriting / Введите сумму (цифры):"
     )
     return AMOUNT
-
-async def salary_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["worker_name"] = update.message.text.strip()
-    await update.message.reply_text("💼 Lavozim / Должность:\n(Masalan: Usta, Snabjenets...)")
-    return SALARY_POSITION
-
-async def salary_position(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["position"] = update.message.text.strip()
-    await update.message.reply_text("💰 Oylik maosh / Оклад (сум):")
-    return SALARY_BASE
-
-async def salary_base(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        base = int(update.message.text.replace(" ", "").replace(",", ""))
-        context.user_data["salary_base"] = base
-        await update.message.reply_text(
-            "💵 Avans miqdori / Сумма аванса (сум):\n"
-            "(Agar avans yo'q bo'lsa / Если аванса нет — напишите 0)"
-        )
-        return SALARY_ADVANCE
-    except:
-        await update.message.reply_text("❌ Faqat raqam / Только цифры! Qaytadan / Повторите:")
-        return SALARY_BASE
-
-async def salary_advance(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        advance = int(update.message.text.replace(" ", "").replace(",", ""))
-        base = context.user_data["salary_base"]
-        total = base - advance
-        name = context.user_data["name"]
-
-        text = (
-            f"📋 Tekshiring / Проверьте:\n\n"
-            f"👷 Работник: {context.user_data['worker_name']}\n"
-            f"💼 Должность: {context.user_data['position']}\n"
-            f"💰 Оклад: {base:,} сум\n"
-            f"💵 Аванс: {advance:,} сум\n"
-            f"✅ Итого к выдаче: {total:,} сум\n"
-            f"👤 Кто внёс: {name}"
-        )
-        context.user_data["salary_advance"] = advance
-        await update.message.reply_text(text, reply_markup=confirm_keyboard())
-        return COMMENT
-    except:
-        await update.message.reply_text("❌ Faqat raqam / Только цифры!")
-        return SALARY_ADVANCE
 
 async def get_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         amount = int(update.message.text.replace(" ", "").replace(",", ""))
         context.user_data["amount"] = amount
-        op_type = context.user_data.get("op_type", "Расход")
         category = context.user_data.get("category", "")
-
-        text = (
-            f"📋 Tekshiring:\n"
-            f"📌 Тип: {op_type}\n"
-            f"🏷 Категория: {category}\n"
-            f"💰 Сумма: {amount:,} сум\n\n"
-            f"💬 Izoh qo'shing / Добавьте комментарий:"
+        op_type = context.user_data.get("op_type", "Расход")
+        await update.message.reply_text(
+            f"📌 {op_type}: {category}\n💰 {amount:,} сум\n\n💬 Izoh / Комментарий:",
+            reply_markup=skip_keyboard()
         )
-        await update.message.reply_text(text, reply_markup=skip_keyboard())
         return COMMENT
     except:
-        await update.message.reply_text("❌ Faqat raqam / Только цифры! Qaytadan:")
+        await update.message.reply_text("❌ Faqat raqam / Только цифры!")
         return AMOUNT
 
 async def get_comment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    role = context.user_data.get("role", ROLE_SUPPLIER)
+    name = context.user_data.get("name", "")
     if query:
         await query.answer()
         if query.data == "skip_comment":
             context.user_data["comment"] = ""
-            await finalize(query, context, is_salary=False)
-        elif query.data == "confirm":
-            await finalize(query, context, is_salary=True)
+            await save_operation(query, context, name, role)
         elif query.data == "cancel":
-            role = context.user_data.get("role", ROLE_SUPPLIER)
             await query.edit_message_text("❌ Отменено.", reply_markup=main_keyboard(role))
     else:
         context.user_data["comment"] = update.message.text.strip()
-        await finalize_msg(update, context)
+        await save_operation_msg(update, context, name, role)
     return ConversationHandler.END
 
-async def finalize(query, context, is_salary=False):
-    name = context.user_data.get("name", "Неизвестно")
-    role = context.user_data.get("role", ROLE_SUPPLIER)
-
+async def save_operation(query, context, name, role):
     try:
-        if is_salary:
-            data = {
-                "worker_name": context.user_data["worker_name"],
-                "position": context.user_data["position"],
-                "base": context.user_data["salary_base"],
-                "advance": context.user_data["salary_advance"],
-            }
-            total = add_salary(data, name)
-            op_data = {
-                "type": "Расход",
-                "category": "👷 Зарплаты",
-                "amount": total,
-                "comment": f"{data['worker_name']} · зарплата"
-            }
-            add_operation(op_data, name)
-            text = (
-                f"✅ Saqlandi! / Записано!\n\n"
-                f"👷 {data['worker_name']}\n"
-                f"💼 {data['position']}\n"
-                f"💰 Оклад: {int(data['base']):,} сум\n"
-                f"💵 Аванс: {int(data['advance']):,} сум\n"
-                f"✅ Выдано: {total:,} сум\n"
-                f"📅 {datetime.now().strftime('%d.%m.%Y %H:%M')}"
-            )
-        else:
-            amount = context.user_data["amount"]
-            op_type = context.user_data["op_type"]
-            category = context.user_data["category"]
-            comment = context.user_data.get("comment", "")
-            op_data = {"type": op_type, "category": category,
-                       "amount": amount, "comment": comment}
-            add_operation(op_data, name)
-
-            text = (
-                f"✅ Saqlandi! / Записано!\n\n"
-                f"📌 {op_type}: {category}\n"
-                f"💰 {amount:,} сум\n"
-                f"💬 {comment or '—'}\n"
-                f"👤 {name}\n"
-                f"📅 {datetime.now().strftime('%d.%m.%Y %H:%M')}"
-            )
-
-            if op_type == "Расход":
-                limit, spent = check_limit(category, amount)
-                if limit and spent and spent > limit:
-                    text += f"\n\n⚠️ DIQQAT! Limit oshdi!\nЛимит превышен!\n{spent:,} / {limit:,} сум"
-                    director_id = get_director_id()
-                    if director_id:
-                        await query.get_bot().send_message(
-                            director_id,
-                            f"🔔 ЛИМИТ ПРЕВЫШЕН!\n"
-                            f"Категория: {category}\n"
-                            f"Потрачено: {spent:,} / {limit:,} сум\n"
-                            f"Добавил: {name}"
-                        )
-
-        context.user_data.clear()
-        context.user_data["role"] = role
-        context.user_data["name"] = name
-
-        buttons = InlineKeyboardMarkup([
-            [InlineKeyboardButton("➕ Yana kiritish / Ещё запись", callback_data=f"type_expense")],
-            [InlineKeyboardButton("🏠 Bosh sahifa / Главная", callback_data="back_main")]
-        ])
-        await query.edit_message_text(text, reply_markup=buttons)
-
-    except Exception as e:
-        logger.error(f"Ошибка записи: {e}")
-        await query.edit_message_text(f"❌ Xatolik / Ошибка: {e}\n\nQaytadan urinib ko'ring.")
-
-async def finalize_msg(update, context):
-    name = context.user_data.get("name", "Неизвестно")
-    role = context.user_data.get("role", ROLE_SUPPLIER)
-    amount = context.user_data["amount"]
-    op_type = context.user_data["op_type"]
-    category = context.user_data["category"]
-    comment = context.user_data.get("comment", "")
-
-    try:
-        op_data = {"type": op_type, "category": category,
-                   "amount": amount, "comment": comment}
-        add_operation(op_data, name)
-
+        amount = context.user_data["amount"]
+        op_type = context.user_data["op_type"]
+        category = context.user_data["category"]
+        comment = context.user_data.get("comment", "")
+        add_operation({"type": op_type, "category": category, "amount": amount, "comment": comment}, name)
         text = (
             f"✅ Saqlandi! / Записано!\n\n"
             f"📌 {op_type}: {category}\n"
@@ -461,12 +300,37 @@ async def finalize_msg(update, context):
             f"👤 {name}\n"
             f"📅 {datetime.now().strftime('%d.%m.%Y %H:%M')}"
         )
-
         if op_type == "Расход":
             limit, spent = check_limit(category, amount)
             if limit and spent and spent > limit:
                 text += f"\n\n⚠️ Лимит превышен!\n{spent:,} / {limit:,} сум"
+                director_id = get_director_id()
+                if director_id:
+                    await query.get_bot().send_message(
+                        director_id,
+                        f"🔔 ЛИМИТ ПРЕВЫШЕН!\nКатегория: {category}\n"
+                        f"Потрачено: {spent:,} / {limit:,} сум\nДобавил: {name}"
+                    )
+        buttons = InlineKeyboardMarkup([
+            [InlineKeyboardButton("➕ Yana / Ещё", callback_data="type_expense")],
+            [InlineKeyboardButton("🏠 Главная", callback_data="back_main")]
+        ])
+        await query.edit_message_text(text, reply_markup=buttons)
+    except Exception as e:
+        await query.edit_message_text(f"❌ Xatolik: {e}")
 
+async def save_operation_msg(update, context, name, role):
+    try:
+        amount = context.user_data["amount"]
+        op_type = context.user_data["op_type"]
+        category = context.user_data["category"]
+        comment = context.user_data.get("comment", "")
+        add_operation({"type": op_type, "category": category, "amount": amount, "comment": comment}, name)
+        text = (
+            f"✅ Saqlandi!\n\n📌 {op_type}: {category}\n"
+            f"💰 {amount:,} сум\n💬 {comment or '—'}\n"
+            f"👤 {name}\n📅 {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+        )
         buttons = InlineKeyboardMarkup([
             [InlineKeyboardButton("➕ Yana / Ещё", callback_data="type_expense")],
             [InlineKeyboardButton("🏠 Главная", callback_data="back_main")]
@@ -475,38 +339,103 @@ async def finalize_msg(update, context):
     except Exception as e:
         await update.message.reply_text(f"❌ Ошибка: {e}")
 
+async def salary_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["worker_name"] = update.message.text.strip()
+    await update.message.reply_text("💼 Lavozim / Должность:")
+    return SALARY_POSITION
+
+async def salary_position(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["position"] = update.message.text.strip()
+    await update.message.reply_text("💰 Oylik / Оклад (сум):")
+    return SALARY_BASE
+
+async def salary_base(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        base = int(update.message.text.replace(" ", "").replace(",", ""))
+        context.user_data["salary_base"] = base
+        await update.message.reply_text("💵 Avans / Аванс (0 если нет):")
+        return SALARY_ADVANCE
+    except:
+        await update.message.reply_text("❌ Только цифры!")
+        return SALARY_BASE
+
+async def salary_advance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        advance = int(update.message.text.replace(" ", "").replace(",", ""))
+        base = context.user_data["salary_base"]
+        total = base - advance
+        context.user_data["salary_advance"] = advance
+        name = context.user_data["name"]
+        text = (
+            f"📋 Tekshiring:\n\n"
+            f"👷 {context.user_data['worker_name']}\n"
+            f"💼 {context.user_data['position']}\n"
+            f"💰 Оклад: {base:,} сум\n"
+            f"💵 Аванс: {advance:,} сум\n"
+            f"✅ К выдаче: {total:,} сум\n"
+            f"👤 {name}"
+        )
+        await update.message.reply_text(text, reply_markup=confirm_keyboard())
+        return COMMENT
+    except:
+        await update.message.reply_text("❌ Только цифры!")
+        return SALARY_ADVANCE
+
+async def confirm_salary(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    role = context.user_data.get("role", ROLE_SUPPLIER)
+    name = context.user_data.get("name", "")
+    if query.data == "cancel":
+        await query.edit_message_text("❌ Отменено.", reply_markup=main_keyboard(role))
+        return ConversationHandler.END
+    try:
+        data = {
+            "worker_name": context.user_data["worker_name"],
+            "position": context.user_data["position"],
+            "base": context.user_data["salary_base"],
+            "advance": context.user_data["salary_advance"],
+        }
+        total = add_salary(data, name)
+        add_operation({
+            "type": "Расход", "category": "👷 Зарплаты",
+            "amount": total, "comment": f"{data['worker_name']} · зарплата"
+        }, name)
+        text = (
+            f"✅ Saqlandi!\n\n"
+            f"👷 {data['worker_name']}\n💼 {data['position']}\n"
+            f"💰 Оклад: {int(data['base']):,} сум\n"
+            f"💵 Аванс: {int(data['advance']):,} сум\n"
+            f"✅ Выдано: {total:,} сум\n"
+            f"📅 {datetime.now().strftime('%d.%m.%Y %H:%M')}"
+        )
+        buttons = InlineKeyboardMarkup([
+            [InlineKeyboardButton("➕ Yana / Ещё", callback_data="type_expense")],
+            [InlineKeyboardButton("🏠 Главная", callback_data="back_main")]
+        ])
+        await query.edit_message_text(text, reply_markup=buttons)
+    except Exception as e:
+        await query.edit_message_text(f"❌ Ошибка: {e}")
+    return ConversationHandler.END
+
 async def show_summary(query):
     try:
         sheet = get_sheet(SHEET_OPERATIONS)
         records = sheet.get_all_records()
         today = datetime.now().strftime("%d.%m.%Y")
         today_ops = [r for r in records if r.get("Дата") == today]
-
-        total_expense = sum(
-            int(str(r.get("Сумма", 0)).replace("-", "").replace("+", ""))
-            for r in today_ops if r.get("Тип") == "Расход"
-        )
-        total_income = sum(
-            int(str(r.get("Сумма", 0)).replace("-", "").replace("+", ""))
-            for r in today_ops if r.get("Тип") == "Доход"
-        )
-
-        text = f"📋 Bugungi svodka / Сводка за {today}:\n\n"
-        text += f"📤 Доходы: +{total_income:,} сум\n"
-        text += f"📥 Расходы: -{total_expense:,} сум\n"
-        text += f"💰 Баланс: {total_income - total_expense:,} сум\n\n"
-
+        total_expense = sum(int(str(r.get("Сумма", 0)).replace("-", "").replace("+", "")) for r in today_ops if r.get("Тип") == "Расход")
+        total_income = sum(int(str(r.get("Сумма", 0)).replace("-", "").replace("+", "")) for r in today_ops if r.get("Тип") == "Доход")
+        text = f"📋 Сводка за {today}:\n\n📤 Доходы: +{total_income:,}\n📥 Расходы: -{total_expense:,}\n💰 Баланс: {total_income-total_expense:,} сум\n\n"
         if today_ops:
-            text += "📝 Записи:\n"
+            text += "📝 Последние:\n"
             for r in today_ops[-5:]:
                 sign = "+" if r.get("Тип") == "Доход" else "-"
-                text += f"• {r.get('Категория')} {sign}{int(str(r.get('Сумма',0)).replace('-','').replace('+','')):,} — {r.get('Кто внёс')}\n"
+                amt = int(str(r.get("Сумма", 0)).replace("-", "").replace("+", ""))
+                text += f"• {r.get('Категория')} {sign}{amt:,} — {r.get('Кто внёс')}\n"
         else:
-            text += "Записей нет / Yozuvlar yo'q"
-
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("◀️ Назад / Orqaga", callback_data="back_main")]
-        ]))
+            text += "Записей нет"
+        await query.edit_message_text(text, reply_markup=back_keyboard())
     except Exception as e:
         await query.edit_message_text(f"❌ Ошибка: {e}")
 
@@ -515,35 +444,15 @@ async def show_dashboard(query):
         sheet = get_sheet(SHEET_OPERATIONS)
         records = sheet.get_all_records()
         month = datetime.now().strftime("%m.%Y")
-
         month_ops = [r for r in records if str(r.get("Дата", "")).endswith(month)]
-        total_income = sum(
-            int(str(r.get("Сумма", 0)).replace("-", "").replace("+", ""))
-            for r in month_ops if r.get("Тип") == "Доход"
-        )
-        total_expense = sum(
-            int(str(r.get("Сумма", 0)).replace("-", "").replace("+", ""))
-            for r in month_ops if r.get("Тип") == "Расход"
-        )
-
-        text = f"📈 Дашборд — {datetime.now().strftime('%B %Y')}\n\n"
-        text += f"📤 Доходы: +{total_income:,} сум\n"
-        text += f"📥 Расходы: -{total_expense:,} сум\n"
-        text += f"💰 Баланс: {total_income - total_expense:,} сум\n\n"
-        text += "📊 По категориям:\n"
-
+        total_income = sum(int(str(r.get("Сумма", 0)).replace("-", "").replace("+", "")) for r in month_ops if r.get("Тип") == "Доход")
+        total_expense = sum(int(str(r.get("Сумма", 0)).replace("-", "").replace("+", "")) for r in month_ops if r.get("Тип") == "Расход")
+        text = f"📈 Дашборд — {datetime.now().strftime('%B %Y')}\n\n📤 Доходы: +{total_income:,}\n📥 Расходы: -{total_expense:,}\n💰 Баланс: {total_income-total_expense:,} сум\n\n📊 По категориям:\n"
         for cat in EXPENSE_CATEGORIES:
-            cat_total = sum(
-                int(str(r.get("Сумма", 0)).replace("-", "").replace("+", ""))
-                for r in month_ops
-                if r.get("Категория") == cat and r.get("Тип") == "Расход"
-            )
+            cat_total = sum(int(str(r.get("Сумма", 0)).replace("-", "").replace("+", "")) for r in month_ops if r.get("Категория") == cat and r.get("Тип") == "Расход")
             if cat_total > 0:
                 text += f"• {cat}: {cat_total:,} сум\n"
-
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("◀️ Назад", callback_data="back_main")]
-        ]))
+        await query.edit_message_text(text, reply_markup=back_keyboard())
     except Exception as e:
         await query.edit_message_text(f"❌ Ошибка: {e}")
 
@@ -552,20 +461,15 @@ async def show_my_records(query, name):
         sheet = get_sheet(SHEET_OPERATIONS)
         records = sheet.get_all_records()
         my_records = [r for r in records if r.get("Кто внёс") == name][-5:]
-
-        text = f"🕐 Mening yozuvlarim / Мои последние записи:\n\n"
+        text = "🕐 Мои последние записи:\n\n"
         if my_records:
             for r in my_records:
                 sign = "+" if r.get("Тип") == "Доход" else "-"
-                text += (f"• {r.get('Дата')} {r.get('Категория')} "
-                         f"{sign}{int(str(r.get('Сумма',0)).replace('-','').replace('+','')):,} сум\n"
-                         f"  {r.get('Комментарий') or '—'}\n\n")
+                amt = int(str(r.get("Сумма", 0)).replace("-", "").replace("+", ""))
+                text += f"• {r.get('Дата')} {r.get('Категория')} {sign}{amt:,}\n  {r.get('Комментарий') or '—'}\n\n"
         else:
-            text += "Записей нет / Yozuvlar yo'q"
-
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("◀️ Назад", callback_data="back_main")]
-        ]))
+            text += "Записей нет"
+        await query.edit_message_text(text, reply_markup=back_keyboard())
     except Exception as e:
         await query.edit_message_text(f"❌ Ошибка: {e}")
 
@@ -573,21 +477,17 @@ async def show_users(query):
     try:
         sheet = get_sheet(SHEET_USERS)
         records = sheet.get_all_records()
-        text = "👥 Пользователи / Foydalanuvchilar:\n\n"
+        text = "👥 Пользователи:\n\n"
         for r in records:
             status = "✅" if str(r.get("Активен", "")).lower() == "да" else "❌"
             text += f"{status} {r.get('Имя')} — {r.get('Роль')}\n"
-
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("◀️ Назад", callback_data="settings")]
-        ]))
+        await query.edit_message_text(text, reply_markup=back_keyboard())
     except Exception as e:
         await query.edit_message_text(f"❌ Ошибка: {e}")
 
 # ==================== ЗАПУСК ====================
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
-
     conv_handler = ConversationHandler(
         entry_points=[
             CommandHandler("start", start),
@@ -608,24 +508,13 @@ def main():
         fallbacks=[CommandHandler("start", start)],
         per_message=False
     )
-
     app.add_handler(conv_handler)
     logger.info("Бот запущен!")
     app.run_polling(drop_pending_updates=True)
 
-import threading
-from flask import Flask
-flask_app = Flask(__name__)
-
-@flask_app.route('/')
-def home():
-    return 'Bot is running!'
-
-def run_flask():
-    flask_app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
-
 if __name__ == "__main__":
-    t = threading.Thread(target=run_flask)
-    t.daemon = True
-    t.start()
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
+    logger.info("Flask сервер запущен!")
     main()
