@@ -1,1 +1,390 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>JM Мебельный завод</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#0A0A0F;
+  --bg2:#14141C;
+  --bg3:#1E1E2A;
+  --border:#2A2A38;
+  --text:#F0F0FF;
+  --text2:#8888AA;
+  --accent:#6C63FF;
+  --green:#2ECC71;
+  --red:#E74C3C;
+  --orange:#F39C12;
+}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:72px;overflow-x:hidden}
 
+/* HEADER */
+.hdr{background:var(--bg2);border-bottom:1px solid var(--border);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+.hdr-logo{font-size:13px;font-weight:700;color:var(--accent)}
+.hdr-user{font-size:12px;color:var(--text2);text-align:right}
+.hdr-role{font-size:10px;padding:2px 8px;border-radius:8px;margin-top:2px;display:inline-block;font-weight:600}
+.role-d{background:rgba(108,99,255,0.2);color:var(--accent)}
+.role-b{background:rgba(46,204,113,0.2);color:var(--green)}
+.role-s{background:rgba(243,156,18,0.2);color:var(--orange)}
+
+/* BOTTOM NAV */
+.bnav{position:fixed;bottom:0;left:0;right:0;background:var(--bg2);border-top:1px solid var(--border);display:flex;z-index:100}
+.bni{flex:1;display:flex;flex-direction:column;align-items:center;padding:10px 0 14px;cursor:pointer;gap:3px}
+.bni-ic{font-size:20px}
+.bni-lb{font-size:10px;color:var(--text2);font-weight:500}
+.bni.on .bni-lb{color:var(--accent)}
+.bni.on .bni-ic{filter:drop-shadow(0 0 4px var(--accent))}
+
+/* SCREENS */
+.scr{display:none;padding:16px;animation:fadeIn .2s ease}
+.scr.on{display:block}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* CARDS */
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:12px}
+.card-lbl{font-size:10px;font-weight:600;color:var(--text2);letter-spacing:.8px;margin-bottom:12px}
+
+/* TYPE SWITCH */
+.type-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.tbtn{padding:12px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg3);color:var(--text2);font-size:13px;font-weight:500;text-align:center;cursor:pointer;transition:.15s}
+.tbtn.on{border-color:var(--accent);background:rgba(108,99,255,.12);color:var(--accent)}
+
+/* CATS */
+.cg{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.cbtn{padding:11px 8px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg3);color:var(--text2);font-size:12px;text-align:center;cursor:pointer;transition:.15s;line-height:1.4}
+.cbtn.on{border-color:var(--orange);background:rgba(243,156,18,.1);color:var(--orange)}
+
+/* INPUTS */
+.flbl{font-size:11px;font-weight:600;color:var(--text2);letter-spacing:.5px;margin-bottom:6px;margin-top:14px}
+.finp{width:100%;background:var(--bg3);border:1.5px solid var(--border);border-radius:10px;padding:12px 14px;color:var(--text);font-size:15px;font-family:'Inter',sans-serif;outline:none;transition:.15s}
+.finp:focus{border-color:var(--accent)}
+.finp::placeholder{color:var(--text2)}
+textarea.finp{resize:none;height:72px;font-size:13px}
+
+/* SUBMIT */
+.sbtn{width:100%;padding:14px;border-radius:12px;border:none;background:var(--accent);color:#fff;font-size:15px;font-weight:600;cursor:pointer;margin-top:16px;font-family:'Inter',sans-serif;transition:.15s}
+.sbtn:active{opacity:.8;transform:scale(.98)}
+
+/* SUCCESS */
+.succ{text-align:center;padding:48px 20px;display:none}
+.succ-ic{font-size:60px;margin-bottom:16px;animation:pop .4s cubic-bezier(.34,1.56,.64,1)}
+@keyframes pop{from{transform:scale(0)}to{transform:scale(1)}}
+.succ-t{font-size:20px;font-weight:700;margin-bottom:8px}
+.succ-s{font-size:13px;color:var(--text2);line-height:1.6}
+.abtn{margin-top:24px;padding:12px 28px;border-radius:12px;border:1.5px solid var(--accent);background:transparent;color:var(--accent);font-size:14px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif}
+
+/* SALARY */
+.sal-form{display:none}
+.sal-form.on{display:block}
+.sal-res{background:var(--bg3);border-radius:10px;padding:12px;margin-top:12px;border:1px solid var(--border);display:none}
+.sal-row{display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px solid var(--border)}
+.sal-row:last-child{border:none;font-weight:700;color:var(--green);font-size:15px;margin-top:4px}
+
+/* DASHBOARD */
+.bal-card{background:linear-gradient(135deg,#3730A3,#6C63FF);border-radius:16px;padding:20px;margin-bottom:12px;text-align:center}
+.bal-lbl{font-size:12px;color:rgba(255,255,255,.7);margin-bottom:6px}
+.bal-val{font-size:30px;font-weight:700}
+.stat2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.scard{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px}
+.slbl{font-size:11px;color:var(--text2);margin-bottom:4px}
+.sval{font-size:18px;font-weight:700}
+.sval.g{color:var(--green)}
+.sval.r{color:var(--red)}
+.bar-i{margin-bottom:12px}
+.bar-lbl{display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:5px}
+.bar-tr{height:6px;background:var(--bg3);border-radius:3px;overflow:hidden}
+.bar-fl{height:100%;border-radius:3px;transition:width .5s}
+
+/* RECORDS */
+.rec{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:8px}
+.rec-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:3px}
+.rec-cat{font-size:13px;font-weight:500}
+.rec-amt{font-size:14px;font-weight:700}
+.rec-amt.r{color:var(--red)}
+.rec-amt.g{color:var(--green)}
+.rec-meta{font-size:11px;color:var(--text2)}
+
+/* SETTINGS */
+.set-item{display:flex;align-items:center;justify-content:space-between;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:8px}
+.set-l{font-size:13px}
+.set-r{font-size:12px;color:var(--text2)}
+.usr-item{display:flex;align-items:center;gap:12px;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:8px}
+.usr-av{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0}
+.usr-nm{font-size:13px;font-weight:500}
+.usr-rl{font-size:11px;color:var(--text2)}
+.rbadge{font-size:10px;padding:2px 8px;border-radius:8px;margin-left:auto;font-weight:600;flex-shrink:0}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div class="hdr-logo">🏭 JM Мебельный завод</div>
+  <div class="hdr-user">
+    <div id="hdr-name">...</div>
+    <span class="hdr-role role-d" id="hdr-role">...</span>
+  </div>
+</div>
+
+<!-- ВВОД -->
+<div class="scr on" id="scr-input">
+  <div id="main-form">
+    <div class="card">
+      <div class="card-lbl">ТУР / ТИП</div>
+      <div class="type-row">
+        <div class="tbtn on" id="tb-exp" onclick="setType('exp')">📥 Xarajat / Расход</div>
+        <div class="tbtn" id="tb-inc" onclick="setType('inc')">📤 Daromad / Доход</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-lbl">KATEGORIYA / КАТЕГОРИЯ</div>
+      <div class="cg" id="cg"></div>
+    </div>
+
+    <!-- Обычная форма -->
+    <div class="card" id="norm-f">
+      <div class="flbl">SUMMA / СУММА (сум)</div>
+      <input class="finp" type="number" id="f-amt" placeholder="350 000" inputmode="numeric">
+      <div class="flbl">IZOH / КОММЕНТАРИЙ (ixtiyoriy)</div>
+      <textarea class="finp" id="f-cmt" placeholder="Petli uchun / Петли для цеха..."></textarea>
+      <button class="sbtn" onclick="doSubmit()">✅ Yuborish / Отправить</button>
+    </div>
+
+    <!-- Зарплата -->
+    <div class="card sal-form" id="sal-f">
+      <div class="flbl">РАБОТНИК ISM / ИМЯ</div>
+      <input class="finp" type="text" id="s-name" placeholder="Alisher Karimov">
+      <div class="flbl">LAVOZIM / ДОЛЖНОСТЬ</div>
+      <input class="finp" type="text" id="s-pos" placeholder="Usta / Снабженец">
+      <div class="flbl">OYLIK / ОКЛАД (сум)</div>
+      <input class="finp" type="number" id="s-base" placeholder="1 500 000" inputmode="numeric" oninput="calcSal()">
+      <div class="flbl">AVANS / АВАНС (0 если нет)</div>
+      <input class="finp" type="number" id="s-adv" placeholder="0" inputmode="numeric" oninput="calcSal()">
+      <div class="sal-res" id="sal-res">
+        <div class="sal-row"><span>Оклад / Oylik</span><span id="r-b">—</span></div>
+        <div class="sal-row"><span>Аванс / Avans</span><span id="r-a">—</span></div>
+        <div class="sal-row"><span>✅ К выдаче / Beriladi</span><span id="r-t">—</span></div>
+      </div>
+      <button class="sbtn" onclick="doSalary()">✅ Yuborish / Отправить</button>
+    </div>
+  </div>
+
+  <div class="succ" id="succ">
+    <div class="succ-ic">✅</div>
+    <div class="succ-t">Saqlandi! / Записано!</div>
+    <div class="succ-s" id="succ-d"></div>
+    <button class="abtn" onclick="resetAll()">➕ Yana kiritish / Ещё запись</button>
+  </div>
+</div>
+
+<!-- СВОДКА (бухгалтер) -->
+<div class="scr" id="scr-summary">
+  <div class="card">
+    <div class="card-lbl">BUGUNGI / СЕГОДНЯ</div>
+    <div class="stat2">
+      <div class="scard"><div class="slbl">📤 Доходы</div><div class="sval g" id="sum-inc">0 сум</div></div>
+      <div class="scard"><div class="slbl">📥 Расходы</div><div class="sval r" id="sum-exp">0 сум</div></div>
+    </div>
+  </div>
+  <div id="sum-list"></div>
+</div>
+
+<!-- ДАШБОРД (директор) -->
+<div class="scr" id="scr-dash">
+  <div class="bal-card">
+    <div class="bal-lbl">Umumiy balans / Баланс — текущий месяц</div>
+    <div class="bal-val" id="d-bal">+0 сум</div>
+  </div>
+  <div class="stat2">
+    <div class="scard"><div class="slbl">📤 Доходы</div><div class="sval g" id="d-inc">0</div></div>
+    <div class="scard"><div class="slbl">📥 Расходы</div><div class="sval r" id="d-exp">0</div></div>
+  </div>
+  <div class="card">
+    <div class="card-lbl">KATEGORIYALAR / ПО КАТЕГОРИЯМ</div>
+    <div id="d-bars">
+      <div class="bar-i"><div class="bar-lbl"><span>🪵 Материалы</span><span>—</span></div><div class="bar-tr"><div class="bar-fl" style="width:0%;background:#6C63FF"></div></div></div>
+      <div class="bar-i"><div class="bar-lbl"><span>👷 Зарплаты</span><span>—</span></div><div class="bar-tr"><div class="bar-fl" style="width:0%;background:#2ECC71"></div></div></div>
+      <div class="bar-i"><div class="bar-lbl"><span>💡 Коммунальные</span><span>—</span></div><div class="bar-tr"><div class="bar-fl" style="width:0%;background:#F39C12"></div></div></div>
+      <div class="bar-i"><div class="bar-lbl"><span>⚙️ Производство</span><span>—</span></div><div class="bar-tr"><div class="bar-fl" style="width:0%;background:#E74C3C"></div></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- НАСТРОЙКИ (директор) -->
+<div class="scr" id="scr-settings">
+  <div class="card">
+    <div class="card-lbl">FOYDALANUVCHILAR / ПОЛЬЗОВАТЕЛИ</div>
+    <div id="usr-list">
+      <div class="usr-item">
+        <div class="usr-av" style="background:rgba(108,99,255,.2);color:#6C63FF">ДР</div>
+        <div><div class="usr-nm" id="dir-name">Директор</div><div class="usr-rl">Суперадмин</div></div>
+        <span class="rbadge" style="background:rgba(108,99,255,.2);color:#6C63FF">директор</span>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-lbl">LIMITLAR / ЛИМИТЫ (сум/месяц)</div>
+    <div class="set-item"><span class="set-l">🪵 Материалы</span><span class="set-r">10 000 000</span></div>
+    <div class="set-item"><span class="set-l">👷 Зарплаты</span><span class="set-r">6 000 000</span></div>
+    <div class="set-item"><span class="set-l">💡 Коммунальные</span><span class="set-r">3 000 000</span></div>
+    <div class="set-item"><span class="set-l">⚙️ Производство</span><span class="set-r">2 000 000</span></div>
+  </div>
+  <div class="card">
+    <div class="card-lbl">BILDIRISHNOMALAR / УВЕДОМЛЕНИЯ</div>
+    <div class="set-item"><span class="set-l">🔔 Лимит превышен</span><span class="set-r" style="color:#2ECC71">Вкл</span></div>
+    <div class="set-item"><span class="set-l">📄 Недельный отчёт (пн)</span><span class="set-r" style="color:#2ECC71">Вкл</span></div>
+  </div>
+</div>
+
+<!-- НИЖНЯЯ НАВИГАЦИЯ -->
+<div class="bnav" id="bnav">
+  <div class="bni on" id="ni-input" onclick="go('input')"><span class="bni-ic">➕</span><span class="bni-lb">Kiritish/Ввод</span></div>
+  <div class="bni" id="ni-summary" onclick="go('summary')" style="display:none"><span class="bni-ic">📋</span><span class="bni-lb">Svodka/Сводка</span></div>
+  <div class="bni" id="ni-dash" onclick="go('dash')" style="display:none"><span class="bni-ic">📈</span><span class="bni-lb">Dashbord</span></div>
+  <div class="bni" id="ni-settings" onclick="go('settings')" style="display:none"><span class="bni-ic">⚙️</span><span class="bni-lb">Sozlamalar</span></div>
+</div>
+
+<script>
+const tg = window.Telegram.WebApp;
+tg.expand();
+
+let role = 'снабженец';
+let uname = 'Пользователь';
+let curType = 'exp';
+let curCat = '';
+
+const expCats = ['🪵 Материалы','👷 Зарплаты','💡 Коммунальные','⚙️ Производство'];
+const incCats = ['🛋 Продажи мебели','💰 Аванс','📦 Прочие поступления'];
+
+function init() {
+  const u = tg.initDataUnsafe?.user;
+  if (u) uname = (u.first_name || '') + (u.last_name ? ' ' + u.last_name : '');
+
+  const p = new URLSearchParams(window.location.search);
+  role = (p.get('role') || 'снабженец').toLowerCase();
+  if (p.get('name')) uname = p.get('name');
+
+  document.getElementById('hdr-name').textContent = uname;
+  document.getElementById('hdr-role').textContent = role;
+  document.getElementById('hdr-role').className = 'hdr-role ' +
+    (role==='директор' ? 'role-d' : role==='бухгалтер' ? 'role-b' : 'role-s');
+  document.getElementById('dir-name').textContent = uname;
+
+  // Навигация по роли
+  if (role === 'бухгалтер' || role === 'директор') {
+    document.getElementById('ni-summary').style.display = 'flex';
+  }
+  if (role === 'директор') {
+    document.getElementById('ni-dash').style.display = 'flex';
+    document.getElementById('ni-settings').style.display = 'flex';
+  }
+
+  renderCats();
+}
+
+function setType(t) {
+  curType = t;
+  curCat = '';
+  document.getElementById('tb-exp').classList.toggle('on', t==='exp');
+  document.getElementById('tb-inc').classList.toggle('on', t==='inc');
+  renderCats();
+  document.getElementById('norm-f').style.display = 'block';
+  document.getElementById('sal-f').classList.remove('on');
+}
+
+function renderCats() {
+  const cats = curType==='exp' ? expCats : incCats;
+  document.getElementById('cg').innerHTML = cats.map(c =>
+    `<div class="cbtn${c===curCat?' on':''}" onclick="pickCat('${c}')">${c}</div>`
+  ).join('');
+}
+
+function pickCat(c) {
+  curCat = c;
+  renderCats();
+  if (c === '👷 Зарплаты') {
+    document.getElementById('norm-f').style.display = 'none';
+    document.getElementById('sal-f').classList.add('on');
+  } else {
+    document.getElementById('norm-f').style.display = 'block';
+    document.getElementById('sal-f').classList.remove('on');
+  }
+}
+
+function calcSal() {
+  const b = parseInt(document.getElementById('s-base').value)||0;
+  const a = parseInt(document.getElementById('s-adv').value)||0;
+  if (b > 0) {
+    document.getElementById('sal-res').style.display = 'block';
+    document.getElementById('r-b').textContent = b.toLocaleString()+' сум';
+    document.getElementById('r-a').textContent = a.toLocaleString()+' сум';
+    document.getElementById('r-t').textContent = (b-a).toLocaleString()+' сум';
+  }
+}
+
+function doSubmit() {
+  const amt = parseInt(document.getElementById('f-amt').value);
+  const cmt = document.getElementById('f-cmt').value;
+  if (!amt) { document.getElementById('f-amt').style.borderColor='#E74C3C'; return; }
+  if (!curCat) { alert('Kategoriya tanlang!'); return; }
+  const data = {
+    action: 'operation',
+    type: curType==='exp' ? 'Расход' : 'Доход',
+    category: curCat, amount: amt,
+    comment: cmt, user_name: uname, user_role: role
+  };
+  send(data, `${curCat}\n${amt.toLocaleString()} сум\n${cmt||'—'}`);
+}
+
+function doSalary() {
+  const nm = document.getElementById('s-name').value.trim();
+  const pos = document.getElementById('s-pos').value.trim();
+  const base = parseInt(document.getElementById('s-base').value)||0;
+  const adv = parseInt(document.getElementById('s-adv').value)||0;
+  if (!nm||!pos||!base) { alert('Barcha maydonlarni to\'ldiring!'); return; }
+  const data = {
+    action: 'salary',
+    type: 'Расход', category: '👷 Зарплаты',
+    worker_name: nm, position: pos,
+    base, advance: adv, amount: base-adv,
+    comment: `${nm} · зарплата`,
+    user_name: uname, user_role: role
+  };
+  send(data, `👷 ${nm}\n${pos}\nВыдано: ${(base-adv).toLocaleString()} сум`);
+}
+
+function send(data, detail) {
+  tg.sendData(JSON.stringify(data));
+  document.getElementById('succ-d').textContent = detail;
+  document.getElementById('main-form').style.display = 'none';
+  document.getElementById('succ').style.display = 'block';
+}
+
+function resetAll() {
+  ['f-amt','f-cmt','s-name','s-pos','s-base','s-adv'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.value=''; el.style.borderColor=''; }
+  });
+  document.getElementById('sal-res').style.display = 'none';
+  document.getElementById('sal-f').classList.remove('on');
+  document.getElementById('norm-f').style.display = 'block';
+  curCat = ''; renderCats();
+  document.getElementById('main-form').style.display = 'block';
+  document.getElementById('succ').style.display = 'none';
+}
+
+function go(scr) {
+  document.querySelectorAll('.scr').forEach(s => s.classList.remove('on'));
+  document.querySelectorAll('.bni').forEach(n => n.classList.remove('on'));
+  document.getElementById('scr-'+scr).classList.add('on');
+  document.getElementById('ni-'+scr).classList.add('on');
+}
+
+init();
+</script>
+</body>
+</html>
