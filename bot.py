@@ -613,5 +613,19 @@ def main():
     logger.info("Бот запущен!")
     app.run_polling(drop_pending_updates=True)
 
+import threading
+from flask import Flask
+flask_app = Flask(__name__)
+
+@flask_app.route('/')
+def home():
+    return 'Bot is running!'
+
+def run_flask():
+    flask_app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
+
 if __name__ == "__main__":
+    t = threading.Thread(target=run_flask)
+    t.daemon = True
+    t.start()
     main()
